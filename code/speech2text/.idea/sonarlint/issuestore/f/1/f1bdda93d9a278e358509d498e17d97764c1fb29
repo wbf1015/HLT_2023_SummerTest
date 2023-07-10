@@ -1,0 +1,3 @@
+
+epython:S2208"GImport only needed names or import the module and then use its members.(çØô	8­É¾Ñ’1
+ˆpython:S1542"iRename function "test_featureExtraction_mfcc_process" to match the regular expression ^[a-z_][a-z0-9_]*$.(ó¾Êð8®É¾Ñ’1
