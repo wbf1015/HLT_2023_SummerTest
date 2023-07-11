@@ -38,6 +38,7 @@ def mfcc_process_list(path):
         mfcc = librosa.feature.mfcc(y=x, sr=sr, n_mfcc=n_mfcc)
         # print(type(mfcc))
         # print(str(f)[:-4])
+        # print(mfcc.shape)
         ret.append(mfcc)
     return ret
 

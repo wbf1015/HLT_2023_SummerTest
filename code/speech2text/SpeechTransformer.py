@@ -31,14 +31,37 @@ def get_attn_pad_mask(seq_q, seq_k):  # seq_q: [batch_size, seq_len] ,seq_k: [ba
     seq_k = seq_k[:, :, 0]
     batch_size, len_q, = seq_q.size()
     batch_size, len_k, = seq_k.size()
-    pad_attn_mask = seq_k.data.eq(0)
     # print(pad_attn_mask.shape)
     # pad_attn_mask = torch.bmm(pad_attn_mask, pad_attn_mask.transpose(1, 2))
     # print(pad_attn_mask.shape)
     # return pad_attn_mask
     pad_attn_mask = seq_k.data.eq(0).unsqueeze(1)  # 判断 输入那些含有P(=0),用1标记 ,[batch_size, 1, len_k]
-    print(pad_attn_mask.shape)
+    # print(pad_attn_mask.shape)
     return pad_attn_mask.expand(batch_size, len_q, len_k)  # 扩展成多维度
+
+
+'''
+当输入的是一个二维变量时调用这个函数
+'''
+
+
+def get_attn_pad_mask2(seq_q, seq_k):
+    batch_size, len_q, = seq_q.size()
+    batch_size, len_k, = seq_k.size()
+    pad_attn_mask = seq_k.data.eq(0).unsqueeze(1)  # 判断 输入那些含有P(=0),用1标记 ,[batch_size, 1, len_k]
+    # print(pad_attn_mask.shape)
+    return pad_attn_mask.expand(batch_size, len_q, len_k)  # 扩展成多维度
+
+
+def get_attn_pad_mask3(seq_q, seq_k):
+    # print(f'get_attn_pad_mask3中seq_q大小为：{seq_q.shape}')
+    # print(f'get_attn_pad_mask3中seq_k大小为：{seq_k.shape}')
+    batch_size, len_q, = seq_q.size()
+    seq_k = seq_k[:, :, 0]
+    batch_size, len_k, = seq_k.size()
+    pad_attn_mask = seq_k.data.eq(0).unsqueeze(1)  # 判断 输入那些含有P(=0),用1标记 ,[batch_size, 1, len_k]
+    # print(f'get_attn_pad_mask3中生成的mask大小为：{pad_attn_mask.expand(batch_size, len_q, len_k).shape}')
+    return pad_attn_mask.expand(batch_size, len_q, len_k)
 
 
 '''
@@ -68,8 +91,8 @@ class ScaledDotProductAttention(nn.Module):
         # V: [batch_size, n_heads, len_v(=len_k), d_v]
         # attn_mask: [batch_size, n_heads, seq_len, seq_len]
         scores = torch.matmul(Q, K.transpose(-1, -2)) / np.sqrt(d_k)  # scores : [batch_size, n_heads, len_q, len_k]
-        print(scores.shape)
-        print(attn_mask.shape)
+        # print(scores.shape)
+        # print(attn_mask.shape)
         scores.masked_fill_(attn_mask, -1e9)  # 如果时停用词P就等于 0
         attn = nn.Softmax(dim=-1)(scores)
         context = torch.matmul(attn, V)  # [batch_size, n_heads, len_q, d_v]
@@ -94,8 +117,7 @@ class MultiHeadAttention(nn.Module):
         '''
         Q = self.W_Q(input_Q).view(batch_size, -1, n_heads, d_k).transpose(1, 2)  # Q: [batch_size, n_heads, len_q, d_k]
         K = self.W_K(input_K).view(batch_size, -1, n_heads, d_k).transpose(1, 2)  # K: [batch_size, n_heads, len_k, d_k]
-        V = self.W_V(input_V).view(batch_size, -1, n_heads, d_v).transpose(1,
-                                                                           2)  # V: [batch_size, n_heads, len_v(=len_k), d_v]
+        V = self.W_V(input_V).view(batch_size, -1, n_heads, d_v).transpose(1, 2)  # V: [batch_size, n_heads, len_v(=len_k), d_v]
         attn_mask = attn_mask.unsqueeze(1).repeat(1, n_heads, 1, 1)  # attn_mask : [batch_size, n_heads, seq_len,
         # seq_len]
         context, attn = ScaledDotProductAttention()(Q, K, V, attn_mask)  # context: [batch_size, n_heads, len_q, d_v]
@@ -200,11 +222,11 @@ class Decoder(nn.Module):
         # enc_outputs: [batsh_size, src_len, d_model]
         dec_outputs = self.tgt_emb(dec_inputs)  # [batch_size, tgt_len, d_model]
         dec_outputs = self.pos_emb(dec_outputs)  # [batch_size, tgt_len, d_model]
-        dec_self_attn_pad_mask = get_attn_pad_mask(dec_inputs, dec_inputs)  # [batch_size, tgt_len, tgt_len]
+        dec_self_attn_pad_mask = get_attn_pad_mask2(dec_inputs, dec_inputs)  # [batch_size, tgt_len, tgt_len]
         dec_self_attn_subsequence_mask = get_attn_subsequence_mask(dec_inputs)  # [batch_size, tgt_len, tgt_len]
         dec_self_attn_mask = torch.gt((dec_self_attn_pad_mask +
                                        dec_self_attn_subsequence_mask), 0)  # [batch_size, tgt_len, tgt_len]
-        dec_enc_attn_mask = get_attn_pad_mask(dec_inputs, enc_inputs)  # [batc_size, tgt_len, src_len]
+        dec_enc_attn_mask = get_attn_pad_mask3(dec_inputs, enc_inputs)  # [batc_size, tgt_len, src_len]
         dec_self_attns, dec_enc_attns = [], []
         for layer in self.layers:  # dec_outputs: [batch_size, tgt_len, d_model]
             # dec_self_attn: [batch_size, n_heads, tgt_len, tgt_len]

@@ -7,9 +7,9 @@ from config import *
 if __name__ == "__main__":
 
     enc_inputs, dec_inputs, dec_outputs, tgt_vocab_size = makeData()
-    print('enc_inputs.shape=', enc_inputs.shape)
-    print('dec_inputs.shape=', dec_inputs.shape)
-    print('dec_outputs.shape=', dec_outputs.shape)
+    # print('enc_inputs.shape=', enc_inputs.shape)
+    # print('dec_inputs.shape=', dec_inputs.shape)
+    # print('dec_outputs.shape=', dec_outputs.shape)
     loader = Data.DataLoader(MyDataSet(enc_inputs, dec_inputs, dec_outputs), batch_size, True)
 
     model = Transformer(tgt_vocab_size)
@@ -17,6 +17,7 @@ if __name__ == "__main__":
     optimizer = optim.SGD(model.parameters(), lr=1e-3, momentum=0.99)
 
     for epoch in range(50):
+        count = 1
         for enc_inputs, dec_inputs, dec_outputs in loader:  # enc_inputs : [batch_size, src_len]
                                                             # dec_inputs : [batch_size, tgt_len]
                                                             # dec_outputs: [batch_size, tgt_len]
@@ -25,9 +26,11 @@ if __name__ == "__main__":
             outputs, enc_self_attns, dec_self_attns, dec_enc_attns = model(enc_inputs, dec_inputs)
                                                             # outputs: [batch_size * tgt_len, tgt_vocab_size]
             loss = criterion(outputs, dec_outputs.view(-1))
-            print('Epoch:', '%04d' % (epoch + 1), 'loss =', '{:.6f}'.format(loss))
+            if count % 20 == 0:
+                print('Epoch:', '%04d' % (epoch + 1), 'batch=', count, 'loss =', '{:.6f}'.format(loss))
             optimizer.zero_grad()
             loss.backward()
             optimizer.step()
+            count += 1
     torch.save(model, 'model.pth')
     print("保存模型")
