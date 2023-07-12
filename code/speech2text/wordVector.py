@@ -104,12 +104,12 @@ def construct_dic(dic):
 
 def one_hot_embedding(reflection, sentences, special=None):
     ret = []
-    max_len = get_max_len(sentences)
+    max_len = tgt_max_len
     for sentence in sentences:
         temp = []
         for word in sentence:
             temp.append(reflection[word])
-        for _ in range(len(sentence), max_len):
+        for _ in range(len(sentence), max_len-1):
             temp.append(reflection['P'])
         if special == 'decode_input':
             temp = [reflection['S']] + temp
