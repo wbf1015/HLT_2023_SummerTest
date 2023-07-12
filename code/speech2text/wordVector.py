@@ -1,6 +1,7 @@
 from config import *
 from utils import *
 import os
+import random
 
 '''
 输入：一个文件路径
@@ -76,8 +77,13 @@ def construct_dic_with_list(sentences):
                 continue
             else:
                 words.append(word)
-                reflection[word] = count
-                count += 1
+    '''
+    这里打乱字典应该是很有用的
+    '''
+    random.shuffle(words)
+    for word in words:
+        reflection[word] = count
+        count += 1
     return reflection, len(words) + 3
 
 

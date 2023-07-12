@@ -30,9 +30,11 @@ if __name__ == "__main__":
             loss = criterion(outputs, dec_outputs.view(-1))
             losses.append(loss.item())
             if count % 20 == 0:
-                print('Epoch:', '%04d' % (epoch + 1), 'batch=', count, 'loss =', '{:.6f}'.format(loss))
+                # print('Epoch:', '%04d' % (epoch + 1), 'batch=', count, 'loss =', '{:.6f}'.format(loss))
+                pass
             optimizer.zero_grad()
             loss.backward()
+            print('Epoch:', '%04d' % (epoch + 1), 'batch=', count, 'loss =', '{:.6f}'.format(loss))
             optimizer.step()
             count += 1
     # torch.save(model, 'model.pth')

@@ -161,7 +161,9 @@ class MultiHeadAttention(nn.Module):
         if self.in_feature is not None:
             return nn.LayerNorm(self.in_feature)(output + residual), attn
 
-
+'''
+按照论文的要求使用卷积先提取特征然后再做映射
+'''
 class MultiHeadConvAttention(nn.Module):
     def __init__(self, onFrequency=False):
         super(MultiHeadConvAttention, self).__init__()
@@ -199,10 +201,8 @@ class MultiHeadConvAttention(nn.Module):
         input_V = torch.squeeze(input_V, dim=1)
         Q = self.W_Q(input_Q).view(batch_size, -1, n_heads, d_k).transpose(1, 2)  # Q: [batch_size, n_heads, len_q, d_k]
         K = self.W_K(input_K).view(batch_size, -1, n_heads, d_k).transpose(1, 2)  # K: [batch_size, n_heads, len_k, d_k]
-        V = self.W_V(input_V).view(batch_size, -1, n_heads, d_v).transpose(1,
-                                                                           2)  # V: [batch_size, n_heads, len_v(=len_k), d_v]
-        attn_mask = attn_mask.unsqueeze(1).repeat(1, n_heads, 1, 1)  # attn_mask : [batch_size, n_heads, seq_len,
-        # seq_len]
+        V = self.W_V(input_V).view(batch_size, -1, n_heads, d_v).transpose(1, 2)  # V: [batch_size, n_heads, len_v(=len_k), d_v]
+        attn_mask = attn_mask.unsqueeze(1).repeat(1, n_heads, 1, 1)  # attn_mask : [batch_size, n_heads, seq_len, seq_len]
         context, attn = ScaledDotProductAttention()(Q, K, V, attn_mask)  # context: [batch_size, n_heads, len_q, d_v]
         # attn: [batch_size, n_heads, len_q, len_k]
         context = context.transpose(1, 2).reshape(batch_size, -1,
@@ -213,6 +213,7 @@ class MultiHeadConvAttention(nn.Module):
 
 '''
 经过两个全连接成，得到的结果再加上 inputs ，再做LayerNorm归一化。
+分不同情况讨论，因为做转置之后输入的维度会不一样
 '''
 
 
@@ -310,6 +311,10 @@ class Encoder(nn.Module):
         enc_outputs2 = torch.transpose(enc_outputs, 1, 2)
         enc_self_attn_mask2 = get_attn_pad_mask(torch.transpose(enc_inputs, 1, 2), torch.transpose(enc_inputs, 1, 2))
         enc_self_attns2 = []
+        '''
+        这块没啥好说的，就是先做时间上的再做频率上的，因为要共享权重所以这里对频率的attention直接对这时间上的attention的第一个层的特征图
+        做转置
+        '''
         for layer in self.layers:
             enc_outputs, enc_self_attn = layer(enc_outputs,
                                                enc_self_attn_mask)  # enc_outputs :   [batch_size, src_len, d_model],
@@ -341,7 +346,8 @@ class DecoderLayer(nn.Module):
                                                         dec_self_attn_mask)  # dec_outputs: [batch_size, tgt_len, d_model]
         # dec_self_attn: [batch_size, n_heads, tgt_len, tgt_len]
         # print(dec_outputs.shape, enc_outputs.shape, enc_outputs.shape)
-        dec_outputs = self.reshape_dec_outputs(dec_outputs, enc_outputs)
+        # 我感觉应该已经用不到这个了
+        # dec_outputs = self.reshape_dec_outputs(dec_outputs, enc_outputs)
         # print(dec_outputs.shape, enc_outputs.shape, enc_outputs.shape)
         dec_outputs, dec_enc_attn = self.dec_enc_attn(dec_outputs, enc_outputs,
                                                       enc_outputs,
@@ -367,7 +373,8 @@ class Decoder(nn.Module):
         self.pos_emb = PositionalEncoding(d_model)
         self.layers = nn.ModuleList([DecoderLayer() for _ in range(n_layers)])
         self.layers2 = nn.ModuleList([DecoderLayer(self_attn_in_feature=feature_max_len, enc_attn_in_feature=feature_max_len, FFN_in_feature=feature_max_len) for _ in range(n_layers)])
-        self.layers2[0] = DecoderLayer(self_attn_in_feature=tgt_max_len, enc_attn_in_feature=feature_max_len, FFN_in_feature=feature_max_len)
+        # self.layers2[0] = DecoderLayer(self_attn_in_feature=tgt_max_len, enc_attn_in_feature=feature_max_len, FFN_in_feature=feature_max_len)
+        self.frequencyLinear = nn.Linear(in_features=tgt_max_len,out_features=feature_max_len,bias=False)
     def forward(self, dec_inputs, enc_inputs, enc_outputs, enc_outputs2):  # dec_inputs: [batch_size, tgt_len]
         # enc_intpus: [batch_size, src_len]
         # enc_outputs: [batsh_size, src_len, d_model]
@@ -383,7 +390,12 @@ class Decoder(nn.Module):
 
         # 在频率上做embedding
         dec_outputs2 = torch.transpose(dec_outputs, 1, 2)
+        '''
+        在Decoder阶段我把对时间上做attention的特征图直接拿过来转置之后现在时间是作为模型特征维度出现的
+        我需要把这个维度映射到和mfcc一致才行，但是mask因为对应特征维度来说应该都要用到所以全是False
+        '''
         # print(f'dec_outputs2.shape={dec_outputs2.shape}')
+        dec_outputs2 = self.frequencyLinear(dec_outputs2)
         dec_self_attn_mask2 = get_attn_pad_mask4(dec_outputs2)
         # dec_enc_attn_mask2 = get_attn_pad_mask3(dec_inputs, enc_inputs)
         dec_self_attns2, dec_enc_attns2 = [], []
@@ -411,18 +423,30 @@ class Transformer(nn.Module):
         super(Transformer, self).__init__()
         self.Encoder = Encoder()
         self.Decoder = Decoder(tgt_vocab_size=tgt_vocab_size)
+        '''
+        这个全连接层的作用是把因为转置而造成的扩容再映射回来，其实就是我的tgt_max_len不会有mfcc采样一样大的时间维度长度
+        卷积的作用是因为对时间和空间都各有一个特征图[batch_size,2,tgt_max_len,d_model] 把这个2卷积成1
+        '''
+        self.frequencyLinear = nn.Linear(feature_max_len, tgt_max_len, bias=False)
+        self.Conv = nn.ConvTranspose2d(in_channels=2, out_channels=1, kernel_size=1, stride=1, padding=0)
         self.projection = nn.Linear(d_model, tgt_vocab_size, bias=False)
 
     def forward(self, enc_inputs, dec_inputs):  # enc_inputs: [batch_size, src_len]
-        # dec_inputs: [batch_size, tgt_len]
-        enc_outputs, enc_self_attns, enc_outputs2, enc_self_attns2 = self.Encoder(
-            enc_inputs)  # enc_outputs: [batch_size, src_len, d_model],
+                                                # dec_inputs: [batch_size, tgt_len]
+        # print(f'enc_inputs.shape={enc_inputs.shape},dec_inputs.shape={dec_inputs.shape}')
+        enc_outputs, enc_self_attns, enc_outputs2, enc_self_attns2 = self.Encoder(enc_inputs)  # enc_outputs: [batch_size, src_len, d_model],
         # enc_self_attns: [n_layers, batch_size, n_heads, src_len, src_len]
-        dec_outputs, dec_self_attns, dec_enc_attns, dec_outputs2 = self.Decoder(dec_inputs, enc_inputs, enc_outputs,
-                                                                  enc_outputs2)  # dec_outpus    : [batch_size, tgt_len, d_model],
+        # print(f'enc_outputs.shape={enc_outputs.shape},enc_outputs2.shape={enc_outputs2.shape}')
+        dec_outputs, dec_self_attns, dec_enc_attns, dec_outputs2 = self.Decoder(dec_inputs, enc_inputs, enc_outputs, enc_outputs2)  # dec_outpus    : [batch_size, tgt_len, d_model],
         # dec_self_attns: [n_layers, batch_size, n_heads, tgt_len, tgt_len],
         # dec_enc_attn  : [n_layers, batch_size, tgt_len, src_len]
-        dec_outputs2 = torch.transpose(dec_outputs2, 1, 2)[:, :dec_outputs.shape[1], :dec_outputs.shape[2]]
-        dec_outputs += dec_outputs2
+        # print(f'enc_outputs.shape={dec_outputs.shape},enc_outputs2.shape={dec_outputs2.shape}')
+        # dec_outputs2 = torch.transpose(dec_outputs2, 1, 2)[:, :dec_outputs.shape[1], :dec_outputs.shape[2]]
+        dec_outputs2 = self.frequencyLinear(dec_outputs2)
+        dec_outputs2 = torch.transpose(dec_outputs2, 1, 2)
+        # dec_outputs += dec_outputs2
+        dec_outputs = torch.cat((torch.unsqueeze(dec_outputs, 1), torch.unsqueeze(dec_outputs2, 1)), dim=1)
+        dec_outputs = self.Conv(dec_outputs)
+        dec_outputs = torch.squeeze(dec_outputs, dim=1)
         dec_logits = self.projection(dec_outputs)  # dec_logits: [batch_size, tgt_len, tgt_vocab_size]
         return dec_logits.view(-1, dec_logits.size(-1)), enc_self_attns, dec_self_attns, dec_enc_attns
