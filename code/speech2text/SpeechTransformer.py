@@ -167,11 +167,11 @@ class MultiHeadAttention(nn.Module):
 class MultiHeadConvAttention(nn.Module):
     def __init__(self, onFrequency=False):
         super(MultiHeadConvAttention, self).__init__()
-        self.ConvQ = nn.ConvTranspose2d(1, out_channels=output_channel, kernel_size=kernel_size, stride=stride,
+        self.ConvQ = nn.Conv2d(1, out_channels=output_channel, kernel_size=kernel_size, stride=stride,
                                         padding=padding)
-        self.ConvK = nn.ConvTranspose2d(1, out_channels=output_channel, kernel_size=kernel_size, stride=stride,
+        self.ConvK = nn.Conv2d(1, out_channels=output_channel, kernel_size=kernel_size, stride=stride,
                                         padding=padding)
-        self.ConvV = nn.ConvTranspose2d(1, out_channels=output_channel, kernel_size=kernel_size, stride=stride,
+        self.ConvV = nn.Conv2d(1, out_channels=output_channel, kernel_size=kernel_size, stride=stride,
                                         padding=padding)
         if onFrequency is False:
             feature_len = math.floor((n_mfcc + 2 * padding - kernel_size) / stride) + 1
@@ -428,7 +428,7 @@ class Transformer(nn.Module):
         卷积的作用是因为对时间和空间都各有一个特征图[batch_size,2,tgt_max_len,d_model] 把这个2卷积成1
         '''
         self.frequencyLinear = nn.Linear(feature_max_len, tgt_max_len, bias=False)
-        self.Conv = nn.ConvTranspose2d(in_channels=2, out_channels=1, kernel_size=1, stride=1, padding=0)
+        self.Conv = nn.Conv2d(in_channels=2, out_channels=1, kernel_size=1, stride=1, padding=0)
         self.projection = nn.Linear(d_model, tgt_vocab_size, bias=False)
 
     def forward(self, enc_inputs, dec_inputs):  # enc_inputs: [batch_size, src_len]

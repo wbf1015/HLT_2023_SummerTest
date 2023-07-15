@@ -25,7 +25,7 @@ padding = 1
 train_data_path_base = 'G:\\code\\HLT-test\\code\\speech2text\\data\\train\\'
 train_data_file = []
 start = 2
-end = 7
+end = 3
 for i in range(start, end):
     train_data_file.append('S000'+str(i))
 ground_truth_path = 'G:\\code\\HLT-test\\code\\speech2text\\data\\answer\\aishell_transcript_v0.8.txt'

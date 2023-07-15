@@ -8,11 +8,14 @@ import random
 import math
 import time
 
+from config import *
+
 
 class Encoder(nn.Module):
     def __init__(self, input_dim, emb_dim, enc_hid_dim, dec_hid_dim, dropout):
         super().__init__()
         self.embedding = nn.Embedding(input_dim, emb_dim)
+        self.embedding = nn.Linear(in_features=d_model, out_features=emb_dim)
         self.rnn = nn.GRU(emb_dim, enc_hid_dim, bidirectional=True)
         self.fc = nn.Linear(enc_hid_dim * 2, dec_hid_dim)
         self.dropout = nn.Dropout(dropout)
@@ -77,7 +80,7 @@ class Decoder(nn.Module):
         self.attention = attention
         self.embedding = nn.Embedding(output_dim, emb_dim)
         self.rnn = nn.GRU((enc_hid_dim * 2) + emb_dim, dec_hid_dim)
-        self.fc_out = nn.Linear((enc_hid_dim * 2) + dec_hid_dim + emb_dim, output_dim)
+        self.fc_out = nn.Linear((enc_hid_dim * 2) + dec_hid_dim + emb_dim, d_model)
         self.dropout = nn.Dropout(dropout)
 
     def forward(self, dec_input, s, enc_output):
@@ -86,7 +89,6 @@ class Decoder(nn.Module):
         # enc_output = [src_len, batch_size, enc_hid_dim * 2]
 
         dec_input = dec_input.unsqueeze(1)  # dec_input = [batch_size, 1]
-
         embedded = self.dropout(self.embedding(dec_input)).transpose(0, 1)  # embedded = [1, batch_size, emb_dim]
 
         # a = [batch_size, 1, src_len]
@@ -119,20 +121,23 @@ class Decoder(nn.Module):
 
 
 class Seq2Seq(nn.Module):
-    def __init__(self, encoder, decoder, device):
+    def __init__(self, encoder, decoder, device, tgt_vocab_size):
         super().__init__()
         self.encoder = encoder
         self.decoder = decoder
         self.device = device
+        self.projection = nn.Linear(d_model, tgt_vocab_size, bias=False)
 
     def forward(self, src, trg, teacher_forcing_ratio=0.5):
         # src = [src_len, batch_size]
         # trg = [trg_len, batch_size]
         # teacher_forcing_ratio is probability to use teacher forcing
+        src = torch.transpose(src, 0, 1)
+        trg = torch.transpose(trg, 0, 1)
 
         batch_size = src.shape[1]
         trg_len = trg.shape[0]
-        trg_vocab_size = self.decoder.output_dim
+        trg_vocab_size = d_model
 
         # tensor to store decoder outputs
         outputs = torch.zeros(trg_len, batch_size, trg_vocab_size).to(self.device)
@@ -162,21 +167,35 @@ class Seq2Seq(nn.Module):
             # if not, use predicted token
             dec_input = trg[t] if teacher_force else top1
 
-        return outputs
+        outputs = torch.transpose(outputs, 0, 1)
+        dec_logits = self.projection(outputs)
+        # print(dec_logits.shape)
+        # print((dec_logits.view(-1, dec_logits.size(-1))).shape)
+        return dec_logits.view(-1, dec_logits.size(-1))
 
 
-INPUT_DIM = 512
-OUTPUT_DIM = 30
+INPUT_DIM = 512  # 这个东西是没用的，因为我输入的时候就是一个二维矩阵
+OUTPUT_DIM = d_model
 ENC_EMB_DIM = 256
 DEC_EMB_DIM = 256
 ENC_HID_DIM = 512
 DEC_HID_DIM = 512
 ENC_DROPOUT = 0.5
 DEC_DROPOUT = 0.5
+
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-attn = Attention(ENC_HID_DIM, DEC_HID_DIM)
-enc = Encoder(INPUT_DIM, ENC_EMB_DIM, ENC_HID_DIM, DEC_HID_DIM, ENC_DROPOUT)
-dec = Decoder(OUTPUT_DIM, DEC_EMB_DIM, ENC_HID_DIM, DEC_HID_DIM, DEC_DROPOUT, attn)
+# attn = Attention(ENC_HID_DIM, DEC_HID_DIM)
+# enc = Encoder(INPUT_DIM, ENC_EMB_DIM, ENC_HID_DIM, DEC_HID_DIM, ENC_DROPOUT)
+# dec = Decoder(OUTPUT_DIM, DEC_EMB_DIM, ENC_HID_DIM, DEC_HID_DIM, DEC_DROPOUT, attn)
 
-model = Seq2Seq(enc, dec, device).to(device)
+# seq2seq_model = Seq2Seq(enc, dec, device).to(device)
+
+
+def make_seq2seq_model(output_dim):
+    attn = Attention(ENC_HID_DIM, DEC_HID_DIM)
+    enc = Encoder(INPUT_DIM, ENC_EMB_DIM, ENC_HID_DIM, DEC_HID_DIM, ENC_DROPOUT)
+    dec = Decoder(output_dim, DEC_EMB_DIM, ENC_HID_DIM, DEC_HID_DIM, DEC_DROPOUT, attn)
+
+    seq2seq_model = Seq2Seq(enc, dec, device, output_dim).to(device)
+    return seq2seq_model
