@@ -3,6 +3,7 @@ import torch.nn as nn
 import math
 from config import *
 
+
 class CTC(nn.Module):
     def __init__(self, output_dim, rnn_layers=5, rnn_units=128):
         super(CTC, self).__init__()
@@ -74,8 +75,6 @@ class CTC(nn.Module):
         temp = get_feature_size(temp, 7)
         temp = get_feature_size(temp, 7)
         return temp
-
-
 
 
 def get_feature_size(input_size, kernel_size, padding=0, stride=1):
