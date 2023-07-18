@@ -15,7 +15,8 @@ def mfcc_process(path):
     ret = {}
     print('正在从' + path + '提取音频信息特征...')
     for f in all_files:
-        x, sr = librosa.load(path + '\\' + f)
+        # x, sr = librosa.load(path + '\\' + f) # at windows
+        x, sr = librosa.load(path + '/' + f) # at linux
         mfcc = librosa.feature.mfcc(y=x, sr=sr, n_mfcc=n_mfcc)
         # print(type(mfcc))
         # print(str(f)[:-4])
@@ -34,7 +35,8 @@ def mfcc_process_list(path):
     ret = []
     print('正在从' + path + '提取音频信息特征...')
     for f in all_files:
-        x, sr = librosa.load(path + '\\' + f)
+        # x, sr = librosa.load(path + '\\' + f) # at windows
+        x, sr = librosa.load(path + '/' + f) # at linux
         mfcc = librosa.feature.mfcc(y=x, sr=sr, n_mfcc=n_mfcc)
         # print(type(mfcc))
         # print(str(f)[:-4])

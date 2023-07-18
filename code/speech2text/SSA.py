@@ -21,7 +21,7 @@ class PositionalEncoding(nn.Module):
             if pos != 0 else np.zeros(d_model) for pos in range(max_len)])
         pos_table[1:, 0::2] = np.sin(pos_table[1:, 0::2])  # 字嵌入维度为偶数时
         pos_table[1:, 1::2] = np.cos(pos_table[1:, 1::2])  # 字嵌入维度为奇数时
-        self.pos_table = torch.FloatTensor(pos_table)  # enc_inputs: [seq_len, d_model]
+        self.pos_table = torch.FloatTensor(pos_table).to(device) # enc_inputs: [seq_len, d_model]
 
     def forward(self, inputs):  # enc_inputs: [batch_size, seq_len, d_model]
         inputs += self.pos_table[:inputs.size(1), :]

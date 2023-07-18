@@ -1,9 +1,10 @@
+import torch
 '''
 处理音频数据时用到的一些参数
 '''
-feature_max_len = 520  # 音频特征在时间上的参数
+feature_max_len = 600  # 音频特征在时间上的参数
 n_mfcc = d_model = 128  # 音频特征的采样率 和特征向量的大小
-tgt_max_len = 30
+tgt_max_len = 40
 
 '''
 构建Transformer时用到的一些参数
@@ -22,16 +23,39 @@ padding = 1
 '''
 构建数据集时需要涉及到的参数
 '''
-train_data_path_base = 'G:\\code\\HLT-test\\code\\speech2text\\data\\train\\'
+# 构建训练集
+train_data_path_base = '/codes/data/train/'
 train_data_file = []
 start = 2
 end = 3
 for i in range(start, end):
-    train_data_file.append('S000'+str(i))
-ground_truth_path = 'G:\\code\\HLT-test\\code\\speech2text\\data\\answer\\aishell_transcript_v0.8.txt'
+    if i < 10:
+        train_data_file.append('S000' + str(i))
+    if 10 <= i < 100:
+        train_data_file.append('S00' + str(i))
+    if 100 <= i < 1000:
+        train_data_file.append('S0' + str(i))
+
+# 构建测试集
+test_data_path_base = '/codes/data/test/'
+test_data_file = []
+start = 915
+end = 917
+for i in range(start, end):
+    if i < 10:
+        test_data_file.append('S000' + str(i))
+    if 10 <= i < 100:
+        test_data_file.append('S00' + str(i))
+    if 100 <= i < 1000:
+        test_data_file.append('S0' + str(i))
+
+# ground——truth的路径
+ground_truth_path = '/codes/data/answer/aishell_transcript_v0.8.txt'
+
 
 '''
 训练时可能用到的参数
 '''
 batch_size = 16
 epoch = 20
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')

@@ -126,6 +126,24 @@ def one_hot_embedding(reflection, sentences, special=None):
         ret.append(temp)
     return ret
 
+def save_dic(dic, path):
+    file = open(path, 'w')
+    for k,v in dic.items():
+        file.write(str(k)+' '+str(v)+'\n')
+    file.close()
+
+def load_dic(path):
+    dic = {}
+    with open(path, mode='r') as f:
+        lines = f.readlines()
+        for line in lines:
+            line = line.replace('\n','')
+            items = line.strip().split(' ')
+            key = items[0]
+            values = int(items[1])
+            dic[key] = values
+    return dic
+
 
 if __name__ == "__main__":
     pass

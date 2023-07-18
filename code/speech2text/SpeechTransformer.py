@@ -15,7 +15,7 @@ class PositionalEncoding(nn.Module):
             if pos != 0 else np.zeros(d_model) for pos in range(max_len)])
         pos_table[1:, 0::2] = np.sin(pos_table[1:, 0::2])  # 字嵌入维度为偶数时
         pos_table[1:, 1::2] = np.cos(pos_table[1:, 1::2])  # 字嵌入维度为奇数时
-        self.pos_table = torch.FloatTensor(pos_table)  # enc_inputs: [seq_len, d_model]
+        self.pos_table = torch.FloatTensor(pos_table).to(device)  # enc_inputs: [seq_len, d_model]
 
     def forward(self, enc_inputs):  # enc_inputs: [batch_size, seq_len, d_model]
         enc_inputs += self.pos_table[:enc_inputs.size(1), :]
@@ -155,11 +155,11 @@ class MultiHeadAttention(nn.Module):
                                                   n_heads * d_v)  # context: [batch_size, len_q, n_heads * d_v]
         output = self.fc(context)  # [batch_size, len_q, d_model]
         if self.onFrequency is False and self.in_feature is None:
-            return nn.LayerNorm(d_model)(output + residual), attn
+            return nn.LayerNorm(d_model).to(device)(output + residual), attn
         if self.onFrequency is True and self.in_feature is None:
-            return nn.LayerNorm(feature_max_len)(output + residual), attn
+            return nn.LayerNorm(feature_max_len).to(device)(output + residual), attn
         if self.in_feature is not None:
-            return nn.LayerNorm(self.in_feature)(output + residual), attn
+            return nn.LayerNorm(self.in_feature).to(device)(output + residual), attn
 
 '''
 按照论文的要求使用卷积先提取特征然后再做映射
@@ -208,7 +208,7 @@ class MultiHeadConvAttention(nn.Module):
         context = context.transpose(1, 2).reshape(batch_size, -1,
                                                   n_heads * d_v)  # context: [batch_size, len_q, n_heads * d_v]
         output = self.fc(context)  # [batch_size, len_q, d_model]
-        return nn.LayerNorm(d_model)(output + residual), attn
+        return nn.LayerNorm(d_model).to(device)(output + residual), attn
 
 
 '''
@@ -247,15 +247,15 @@ class PoswiseFeedForwardNet(nn.Module):
         if self.onFrequency is False and self.in_feature is None:
             residual = inputs
             output = self.fc(inputs)
-            return nn.LayerNorm(d_model)(output + residual)  # [batch_size, seq_len, d_model]
+            return nn.LayerNorm(d_model).to(device)(output + residual)  # [batch_size, seq_len, d_model]
         if self.onFrequency is True and self.in_feature is None:
             residual = inputs
             output = self.fc(inputs)
-            return nn.LayerNorm(feature_max_len)(output + residual)  # [batch_size, seq_len, d_model]
+            return nn.LayerNorm(feature_max_len).to(device)(output + residual)  # [batch_size, seq_len, d_model]
         if self.in_feature is not None:
             residual = inputs
             output = self.fc(inputs)
-            return nn.LayerNorm(self.in_feature)(output + residual)  # [batch_size, seq_len, d_model]
+            return nn.LayerNorm(self.in_feature).to(device)(output + residual)  # [batch_size, seq_len, d_model]
 
 
 '''
@@ -381,11 +381,11 @@ class Decoder(nn.Module):
         # 在时间上做attention
         dec_outputs = self.tgt_emb(dec_inputs)  # [batch_size, tgt_len, d_model]
         dec_outputs = self.pos_emb(dec_outputs)  # [batch_size, tgt_len, d_model]
-        dec_self_attn_pad_mask = get_attn_pad_mask2(dec_inputs, dec_inputs)  # [batch_size, tgt_len, tgt_len]
-        dec_self_attn_subsequence_mask = get_attn_subsequence_mask(dec_inputs)  # [batch_size, tgt_len, tgt_len]
+        dec_self_attn_pad_mask = get_attn_pad_mask2(dec_inputs, dec_inputs).to(device)  # [batch_size, tgt_len, tgt_len]
+        dec_self_attn_subsequence_mask = get_attn_subsequence_mask(dec_inputs).to(device)  # [batch_size, tgt_len, tgt_len]
         dec_self_attn_mask = torch.gt((dec_self_attn_pad_mask +
-                                       dec_self_attn_subsequence_mask), 0)  # [batch_size, tgt_len, tgt_len]
-        dec_enc_attn_mask = get_attn_pad_mask3(dec_inputs, enc_inputs)  # [batc_size, tgt_len, src_len]
+                                       dec_self_attn_subsequence_mask), 0).to(device)  # [batch_size, tgt_len, tgt_len]
+        dec_enc_attn_mask = get_attn_pad_mask3(dec_inputs, enc_inputs).to(device)  # [batc_size, tgt_len, src_len]
         dec_self_attns, dec_enc_attns = [], []
 
         # 在频率上做embedding
