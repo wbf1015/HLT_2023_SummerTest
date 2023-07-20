@@ -84,7 +84,7 @@ class SSANBlock(nn.Module):
 class FeedForwardBlock(nn.Module):
     def __init__(self):
         super(FeedForwardBlock, self).__init__()
-        self.feedforward = self.feedforward = nn.Sequential(
+        self.feedforward = nn.Sequential(
             nn.Linear(d_model, DIM_FEEDFORWARD),
             nn.ReLU(),
             nn.Linear(DIM_FEEDFORWARD, d_model)
@@ -159,14 +159,15 @@ class Decoder(nn.Module):
         self.embedding = nn.Embedding(num_embeddings=tgt_vocab_size, embedding_dim=d_model)
         self.PositionEmbedding = PositionalEncoding(d_model)
         self.DecoderLayers = nn.ModuleList([DecoderLayer() for _ in range(DECODER_LAYER)])
+        self.projection = nn.Linear(d_model, tgt_vocab_size, bias=False)
 
     def forward(self, dec_inputs, enc_outputs):
         dec_inputs = self.embedding(dec_inputs)
         dec_outputs = self.PositionEmbedding(dec_inputs) + dec_inputs
         for layer in self.DecoderLayers:
             dec_outputs = layer(dec_outputs,enc_outputs)
-
-        return dec_outputs
+        dec_logits = self.projection(dec_outputs)  # dec_logits: [batch_size, tgt_len, tgt_vocab_size]
+        return dec_logits
 
 
 class SSANTransformer(nn.Module):
@@ -174,11 +175,11 @@ class SSANTransformer(nn.Module):
         super(SSANTransformer, self).__init__()
         self.Encoder = Encoder()
         self.Decoder = Decoder(tgt_vocab_size)
-        self.projection = nn.Linear(d_model, tgt_vocab_size, bias=False)
+        
 
 
     def forward(self, enc_inputs, dec_inputs):
         enc_outputs = self.Encoder(enc_inputs)
-        dec_outputs = self.Decoder(dec_inputs, enc_outputs)
-        dec_logits = self.projection(dec_outputs)  # dec_logits: [batch_size, tgt_len, tgt_vocab_size]
+        dec_logits = self.Decoder(dec_inputs, enc_outputs)
+        
         return dec_logits.view(-1, dec_logits.size(-1))

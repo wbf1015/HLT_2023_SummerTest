@@ -27,7 +27,7 @@ padding = 1
 train_data_path_base = '/codes/data/train/'
 train_data_file = []
 start = 2
-end = 3
+end = 22
 for i in range(start, end):
     if i < 10:
         train_data_file.append('S000' + str(i))
@@ -59,3 +59,6 @@ ground_truth_path = '/codes/data/answer/aishell_transcript_v0.8.txt'
 batch_size = 16
 epoch = 20
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+train_step = 10
+test_step = 100
+lr = 1e-3

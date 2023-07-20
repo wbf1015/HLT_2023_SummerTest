@@ -26,7 +26,7 @@ class RNN(nn.Module):
         # h_t : [num_layers(=1) * num_directions(=1), batch_size, n_hidden]
         _, h_t = self.encoder(enc_input, enc_hidden)
         # outputs : [n_step+1, batch_size, num_directions(=1) * n_hidden(=128)]
-        outputs, _ = self.decoder(dec_input, h_t)
+        outputs, hidden = self.decoder(dec_input, h_t)
         outputs = torch.transpose(outputs, 0, 1)
         outputs = torch.transpose(outputs, 1, 2)
         outputs = self.lenReflect2(outputs)
@@ -34,7 +34,7 @@ class RNN(nn.Module):
         dec_logits = self.fc(outputs)  # model : [n_step+1, batch_size, n_class]
         # print(dec_logits.shape)
         # print((dec_logits.view(-1, dec_logits.size(-1))).shape)
-        return dec_logits.view(-1, dec_logits.size(-1))
+        return dec_logits.view(-1, dec_logits.size(-1)), hidden
 
 
 RNN_hidden = 128

@@ -126,6 +126,15 @@ def one_hot_embedding(reflection, sentences, special=None):
         ret.append(temp)
     return ret
 
+def deal_test_dec_inputs(sentences):
+    for sentence in sentences:
+        for i in range(0,len(sentence)):
+            if i==0:
+                pass
+            else:
+                sentence[i] = 0
+    # print(sentences)
+
 def save_dic(dic, path):
     file = open(path, 'w')
     for k,v in dic.items():

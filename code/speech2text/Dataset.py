@@ -42,6 +42,28 @@ def delete_list(indices, enc_inputs, ground_truth_list):
 
 
 
+def make_Testdata_with_mask(reflection):
+    enc_inputs, dec_inputs, dec_outputs = [], [], []
+    ground_truth_list = []
+    for test_file in test_data_file:
+        # 输入频谱图，Encoder的输入
+        path = test_data_path_base + test_file
+        enc_inputs += mfcc_process_list(path)
+        # 构建Decoder的输入
+        ground_truth_list += fetchGroundTruth_list(ground_truth_path, fetchFile(path))
+
+    # TODO:这里需要筛选一下ground_truth_list里面有字不在reflection的情况
+    indices = check_not_exist(reflection,ground_truth_list)
+    enc_inputs,ground_truth_list = delete_list(indices,enc_inputs,ground_truth_list)
+
+    dec_inputs = one_hot_embedding(reflection, ground_truth_list, 'decode_input')
+    # 我也不是很确定是不是需要这个
+    deal_test_dec_inputs(dec_inputs)
+    dec_outputs = one_hot_embedding(reflection, ground_truth_list, 'decode_output')
+    dec_inputs = torch.LongTensor(dec_inputs)
+    dec_outputs = torch.LongTensor(dec_outputs)
+    return format_mfcc_list(enc_inputs), dec_inputs, dec_outputs
+
 def make_Testdata(reflection):
     enc_inputs, dec_inputs, dec_outputs = [], [], []
     ground_truth_list = []
@@ -61,7 +83,6 @@ def make_Testdata(reflection):
     dec_inputs = torch.LongTensor(dec_inputs)
     dec_outputs = torch.LongTensor(dec_outputs)
     return format_mfcc_list(enc_inputs), dec_inputs, dec_outputs
-
 
 # 自定义数据集函数
 class MyDataSet(Data.Dataset):

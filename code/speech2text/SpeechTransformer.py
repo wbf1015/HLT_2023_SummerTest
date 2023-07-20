@@ -286,10 +286,14 @@ class EncoderLayer(nn.Module):
 
     def forward(self, enc_inputs, enc_self_attn_mask):  # enc_inputs: [batch_size, src_len, d_model]
         # 输入3个enc_inputs分别与W_q、W_k、W_v相乘得到Q、K、V                                # enc_self_attn_mask: [batch_size, src_len, src_len]
+        residual = enc_inputs
         enc_outputs, attn = self.enc_self_attn(enc_inputs, enc_inputs, enc_inputs,
                                                # enc_outputs: [batch_size, src_len, d_model],
                                                enc_self_attn_mask)  # attn: [batch_size, n_heads, src_len, src_len]
+        enc_outputs = enc_outputs + residual
+        residual = enc_outputs
         enc_outputs = self.pos_ffn(enc_outputs)  # enc_outputs: [batch_size, src_len, d_model]
+        # enc_outputs = enc_outputs + residual
         return enc_outputs, attn
 
 
@@ -341,9 +345,12 @@ class DecoderLayer(nn.Module):
         # enc_outputs: [batch_size, src_len, d_model]
         # dec_self_attn_mask: [batch_size, tgt_len, tgt_len]
         # dec_enc_attn_mask: [batch_size, tgt_len, src_len]
+        residual = dec_inputs
         dec_outputs, dec_self_attn = self.dec_self_attn(dec_inputs, dec_inputs,
                                                         dec_inputs,
                                                         dec_self_attn_mask)  # dec_outputs: [batch_size, tgt_len, d_model]
+        dec_outputs = dec_outputs + residual
+        residual = dec_outputs
         # dec_self_attn: [batch_size, n_heads, tgt_len, tgt_len]
         # print(dec_outputs.shape, enc_outputs.shape, enc_outputs.shape)
         # 我感觉应该已经用不到这个了
@@ -352,9 +359,12 @@ class DecoderLayer(nn.Module):
         dec_outputs, dec_enc_attn = self.dec_enc_attn(dec_outputs, enc_outputs,
                                                       enc_outputs,
                                                       dec_enc_attn_mask)  # dec_outputs: [batch_size, tgt_len, d_model]
+        dec_outputs = dec_outputs + residual
+        residual = dec_outputs
         # dec_enc_attn: [batch_size, h_heads, tgt_len, src_len]
         # print(f'dec_outputs.shape={dec_outputs.shape}')
         dec_outputs = self.pos_ffn(dec_outputs)  # dec_outputs: [batch_size, tgt_len, d_model]
+        # dec_outputs = dec_outputs + residual
         return dec_outputs, dec_self_attn, dec_enc_attn
 
     def reshape_dec_outputs(self, dec_outputs, enc_outputs):
@@ -375,6 +385,14 @@ class Decoder(nn.Module):
         self.layers2 = nn.ModuleList([DecoderLayer(self_attn_in_feature=feature_max_len, enc_attn_in_feature=feature_max_len, FFN_in_feature=feature_max_len) for _ in range(n_layers)])
         # self.layers2[0] = DecoderLayer(self_attn_in_feature=tgt_max_len, enc_attn_in_feature=feature_max_len, FFN_in_feature=feature_max_len)
         self.frequencyLinear = nn.Linear(in_features=tgt_max_len,out_features=feature_max_len,bias=False)
+        '''
+        这个全连接层的作用是把因为转置而造成的扩容再映射回来，其实就是我的tgt_max_len不会有mfcc采样一样大的时间维度长度
+        卷积的作用是因为对时间和空间都各有一个特征图[batch_size,2,tgt_max_len,d_model] 把这个2卷积成1
+        '''
+        self.frequencyLinear2 = nn.Linear(feature_max_len, tgt_max_len, bias=False)
+        self.Conv = nn.Conv2d(in_channels=2, out_channels=1, kernel_size=1, stride=1, padding=0)
+        self.projection = nn.Linear(d_model, tgt_vocab_size, bias=False)
+
     def forward(self, dec_inputs, enc_inputs, enc_outputs, enc_outputs2):  # dec_inputs: [batch_size, tgt_len]
         # enc_intpus: [batch_size, src_len]
         # enc_outputs: [batsh_size, src_len, d_model]
@@ -414,8 +432,15 @@ class Decoder(nn.Module):
                                                              dec_self_attn_mask2)
             dec_self_attns2.append(dec_self_attn2)
             dec_enc_attns2.append(dec_enc_attn2)
-
-        return dec_outputs, dec_self_attns, dec_enc_attns, dec_outputs2
+    
+        dec_outputs2 = self.frequencyLinear2(dec_outputs2)
+        dec_outputs2 = torch.transpose(dec_outputs2, 1, 2)
+        # dec_outputs += dec_outputs2
+        dec_outputs = torch.cat((torch.unsqueeze(dec_outputs, 1), torch.unsqueeze(dec_outputs2, 1)), dim=1)
+        dec_outputs = self.Conv(dec_outputs)
+        dec_outputs = torch.squeeze(dec_outputs, dim=1)
+        dec_logits = self.projection(dec_outputs)  # dec_logits: [batch_size, tgt_len, tgt_vocab_size]
+        return dec_logits, dec_self_attns, dec_enc_attns
 
 
 class Transformer(nn.Module):
@@ -423,13 +448,7 @@ class Transformer(nn.Module):
         super(Transformer, self).__init__()
         self.Encoder = Encoder()
         self.Decoder = Decoder(tgt_vocab_size=tgt_vocab_size)
-        '''
-        这个全连接层的作用是把因为转置而造成的扩容再映射回来，其实就是我的tgt_max_len不会有mfcc采样一样大的时间维度长度
-        卷积的作用是因为对时间和空间都各有一个特征图[batch_size,2,tgt_max_len,d_model] 把这个2卷积成1
-        '''
-        self.frequencyLinear = nn.Linear(feature_max_len, tgt_max_len, bias=False)
-        self.Conv = nn.Conv2d(in_channels=2, out_channels=1, kernel_size=1, stride=1, padding=0)
-        self.projection = nn.Linear(d_model, tgt_vocab_size, bias=False)
+        
 
     def forward(self, enc_inputs, dec_inputs):  # enc_inputs: [batch_size, src_len]
                                                 # dec_inputs: [batch_size, tgt_len]
@@ -437,16 +456,10 @@ class Transformer(nn.Module):
         enc_outputs, enc_self_attns, enc_outputs2, enc_self_attns2 = self.Encoder(enc_inputs)  # enc_outputs: [batch_size, src_len, d_model],
         # enc_self_attns: [n_layers, batch_size, n_heads, src_len, src_len]
         # print(f'enc_outputs.shape={enc_outputs.shape},enc_outputs2.shape={enc_outputs2.shape}')
-        dec_outputs, dec_self_attns, dec_enc_attns, dec_outputs2 = self.Decoder(dec_inputs, enc_inputs, enc_outputs, enc_outputs2)  # dec_outpus    : [batch_size, tgt_len, d_model],
+        dec_logits, dec_self_attns, dec_enc_attns = self.Decoder(dec_inputs, enc_inputs, enc_outputs, enc_outputs2)  # dec_outpus    : [batch_size, tgt_len, d_model],
         # dec_self_attns: [n_layers, batch_size, n_heads, tgt_len, tgt_len],
         # dec_enc_attn  : [n_layers, batch_size, tgt_len, src_len]
         # print(f'enc_outputs.shape={dec_outputs.shape},enc_outputs2.shape={dec_outputs2.shape}')
         # dec_outputs2 = torch.transpose(dec_outputs2, 1, 2)[:, :dec_outputs.shape[1], :dec_outputs.shape[2]]
-        dec_outputs2 = self.frequencyLinear(dec_outputs2)
-        dec_outputs2 = torch.transpose(dec_outputs2, 1, 2)
-        # dec_outputs += dec_outputs2
-        dec_outputs = torch.cat((torch.unsqueeze(dec_outputs, 1), torch.unsqueeze(dec_outputs2, 1)), dim=1)
-        dec_outputs = self.Conv(dec_outputs)
-        dec_outputs = torch.squeeze(dec_outputs, dim=1)
-        dec_logits = self.projection(dec_outputs)  # dec_logits: [batch_size, tgt_len, tgt_vocab_size]
+        
         return dec_logits.view(-1, dec_logits.size(-1)), enc_self_attns, dec_self_attns, dec_enc_attns

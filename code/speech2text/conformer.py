@@ -6,7 +6,7 @@ import numpy as np
 from config import *
 
 KERNEL_SIZE = 7
-DROPOUT = 0.5
+DROPOUT = 0.1
 DIM_FEEDFORWARD = 2048
 CONFORMER_FEATURE_LEN = 512
 HEAD_NUM = 8
@@ -21,7 +21,7 @@ class PositionalEncoding(nn.Module):
             if pos != 0 else np.zeros(d_model) for pos in range(max_len)])
         pos_table[1:, 0::2] = np.sin(pos_table[1:, 0::2])  # 字嵌入维度为偶数时
         pos_table[1:, 1::2] = np.cos(pos_table[1:, 1::2])  # 字嵌入维度为奇数时
-        self.pos_table = torch.FloatTensor(pos_table)  # enc_inputs: [seq_len, d_model]
+        self.pos_table = torch.FloatTensor(pos_table).to(device)  # enc_inputs: [seq_len, d_model]
 
     def forward(self, inputs):  # enc_inputs: [batch_size, seq_len, d_model]
         inputs += self.pos_table[:inputs.size(1), :]
@@ -82,7 +82,6 @@ class ConformerBlock(nn.Module):
             nn.Linear(CONFORMER_FEATURE_LEN, DIM_FEEDFORWARD),
             nn.ReLU(),
             nn.Linear(DIM_FEEDFORWARD, CONFORMER_FEATURE_LEN),
-            nn.ReLU()
         )
         self.MultiHeadSelfAttention = AttentionBlock()
         self.Convolution = ConvolutionModule()
@@ -90,7 +89,6 @@ class ConformerBlock(nn.Module):
             nn.Linear(CONFORMER_FEATURE_LEN, DIM_FEEDFORWARD),
             nn.ReLU(),
             nn.Linear(DIM_FEEDFORWARD, CONFORMER_FEATURE_LEN),
-            nn.ReLU()
         )
         self.LayerNorm = nn.LayerNorm(normalized_shape=CONFORMER_FEATURE_LEN)
 
@@ -111,25 +109,83 @@ class ConformerBlock(nn.Module):
         x = self.LayerNorm(x)
         return x
 
-class conformer(nn.Module):
+class Encoder(nn.Module):
     def __init__(self,tgt_vocab_len):
-        super(conformer, self).__init__()
+        super(Encoder, self).__init__()
         self.PositionEncoding = PositionalEncoding(d_model=d_model)
         self.Conv1 = nn.Conv1d(in_channels=feature_max_len, out_channels=tgt_max_len, kernel_size=KERNEL_SIZE, stride=1, padding=0)
         self.Linear1 = nn.Linear(get_feature_size(d_model, KERNEL_SIZE), CONFORMER_FEATURE_LEN)
         self.Dropout = nn.Dropout(DROPOUT)
         self.conformer_blocks = nn.ModuleList([ConformerBlock() for _ in range(LAYER)])
-        self.projection = nn.Linear(CONFORMER_FEATURE_LEN, tgt_vocab_len, bias=False)
 
-    def forward(self, x):
-        x = x + self.PositionEncoding(x)
-        x = self.Conv1(x)
-        x = self.Linear1(x)
-        x = self.Dropout(x)
+    def forward(self, enc_inputs):
+        enc_outputs = enc_inputs + self.PositionEncoding(enc_inputs)
+        enc_outputs = self.Conv1(enc_outputs)
+        enc_outputs = self.Linear1(enc_outputs)
+        enc_outputs = self.Dropout(enc_outputs)
         for block in self.conformer_blocks:
-            x = block(x)
-        dec_logits = self.projection(x)  # dec_logits: [batch_size, tgt_len, tgt_vocab_size]
+            enc_outputs = block(enc_outputs)
+        return enc_outputs
+
+
+class DecoderLayer(nn.Module):
+    def __init__(self):
+        super(DecoderLayer, self).__init__()
+        self.LayerNorm1 = nn.LayerNorm(CONFORMER_FEATURE_LEN)
+        self.Attention1 = nn.MultiheadAttention(CONFORMER_FEATURE_LEN,HEAD_NUM)
+        self.LayerNorm2 = nn.LayerNorm(CONFORMER_FEATURE_LEN)
+        self.Attention2 = nn.MultiheadAttention(CONFORMER_FEATURE_LEN,HEAD_NUM)
+        self.LayerNorm3 = nn.LayerNorm(CONFORMER_FEATURE_LEN)
+        self.FFN = nn.Sequential(
+            nn.Linear(CONFORMER_FEATURE_LEN, DIM_FEEDFORWARD),
+            nn.ReLU(),
+            nn.Linear(DIM_FEEDFORWARD, CONFORMER_FEATURE_LEN)
+        )
+
+    def forward(self, enc_outputs,dec_inputs):
+        residual = dec_inputs
+        dec_outputs = self.LayerNorm1(dec_inputs)
+        dec_outputs, _ = self.Attention1(dec_outputs, dec_outputs, dec_outputs)
+        dec_outputs = dec_outputs + residual
+        residual = dec_outputs
+        dec_outputs = self.LayerNorm2(dec_outputs)
+        dec_outputs, _ = self.Attention2(dec_outputs, enc_outputs, enc_outputs)
+        dec_outputs = dec_outputs + residual
+        residual = dec_outputs
+        dec_outputs = self.LayerNorm2(dec_outputs)
+        dec_outputs = self.FFN(dec_outputs)
+        dec_outputs = dec_outputs + residual
+        
+        return dec_outputs
+
+class Decoder(nn.Module):
+    def __init__(self,tgt_vocab_len):
+        super(Decoder, self).__init__()
+        self.Embedding = nn.Embedding(tgt_vocab_len, CONFORMER_FEATURE_LEN)
+        self.PositionEmbedding = PositionalEncoding(CONFORMER_FEATURE_LEN)
+        self.Decoder_layers = nn.ModuleList([DecoderLayer() for _ in range(LAYER)])
+        self.projection = nn.Linear(CONFORMER_FEATURE_LEN, tgt_vocab_len, bias=False)
+    
+    def forward(self, enc_outputs, dec_inputs):
+        dec_outputs = self.Embedding(dec_inputs)
+        dec_outputs = dec_outputs + self.PositionEmbedding(dec_outputs)
+        for layer in self.Decoder_layers:
+            dec_outputs = layer(enc_outputs, dec_outputs)
+        dec_logits = self.projection(dec_outputs)
+        return dec_logits
+
+class conformer(nn.Module):
+    def __init__(self,tgt_vocab_len):
+        super(conformer, self).__init__()
+        self.Encoder = Encoder(tgt_vocab_len)
+        self.Decoder = Decoder(tgt_vocab_len)
+
+    def forward(self, enc_inputs,dec_inputs):
+        enc_outputs = self.Encoder(enc_inputs)
+        dec_logits = self.Decoder(enc_outputs, dec_inputs)
+
         return dec_logits.view(-1, dec_logits.size(-1))
+        
 
 
 def get_feature_size(input_size, kernel_size, padding=0, stride=1):
