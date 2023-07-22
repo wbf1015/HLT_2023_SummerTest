@@ -27,7 +27,7 @@ padding = 1
 train_data_path_base = '/codes/data/train/'
 train_data_file = []
 start = 2
-end = 22
+end = 3
 for i in range(start, end):
     if i < 10:
         train_data_file.append('S000' + str(i))

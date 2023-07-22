@@ -16,9 +16,11 @@ from CNN import *
 from CTC import *
 from SSA import *
 from conformer import *
+from thop import profile
+from thop import clever_format
 
 parser = argparse.ArgumentParser(description="Training settings")
-parser.add_argument('--model', dest='model', type=str, help='model name', default='SpeechTransformer')
+parser.add_argument('--model', dest='model', type=str, help='model name', default='seq2seq')
 parser.add_argument('--loss', dest='loss', type=str, help='model loss', default='ctcloss')
 parser.add_argument('--seed', dest='seed', type=int, help='torch seed', default=2244668800)
 parser.add_argument('--epoch', dest='epoch', type=int, help='train epoch', default=epoch)
@@ -28,6 +30,7 @@ parser.add_argument('--train_step', dest='train_step', type=int, help='every bat
 parser.add_argument('--test_step', dest='test_step', type=int, help='every batch 2 report test loss at cmd', default=test_step)
 parser.add_argument('--special_index', dest='special_index', type=str, help='special_index which will add 2 filename', default='')
 parser.add_argument('--test_data_mask', dest='test_data_mask', type=str, help='self_regeression or mask the dec_inputs', default='self-regeression')
+parser.add_argument('--model_data', dest='model_data', type=int, help='input anything if you want 2 get data of model', default=0)
 
 args = parser.parse_args()
 
@@ -60,12 +63,32 @@ def main(args):
         model = CTC(output_dim=tgt_vocab_size)
     elif args.model == 'seq2seq':
         model = make_seq2seq_model(tgt_vocab_size)
-    elif args.model == 'seq2seq+CNN':
+    elif args.model == 'CNN':
         model = CNN(tgt_vocab_size)
     else:
         print('对不起，没有这个模型，请检查后输入')
         sys.exit(-1)
     model = model.to(device)
+
+    if args.model_data != 0 :
+        if args.model == 'SpeechTransformer' or args.model == 'CNN' or args.model == 'seq2seq' or args.model == 'Conformer' or args.model == 'SSAN':
+            myinput1 = torch.zeros((batch_size, feature_max_len, d_model)).to(device)
+            myinput2 = torch.zeros((batch_size, tgt_max_len)).to(device).long()
+            flops, params = profile(model, inputs=(myinput1,  myinput2))
+            flops, params = clever_format([flops, params], "%.3f")
+            print(flops, params)
+        if args.model == 'RNN':
+            myinput1 = torch.zeros((batch_size, feature_max_len, d_model)).to(device)
+            myinput2 = torch.zeros((1, batch_size, RNN_hidden)).to(device)
+            myinput3 = torch.zeros((batch_size, tgt_max_len)).to(device).long()
+            flops, params = profile(model, inputs=(myinput1,  myinput2, myinput3))
+            flops, params = clever_format([flops, params], "%.3f")
+            print(flops, params)
+        if args.model == 'CTC':
+            myinput1 = torch.zeros((batch_size, feature_max_len, d_model)).to(device)
+            flops, params = profile(model, inputs=(myinput1,))
+            flops, params = clever_format([flops, params], "%.3f")
+            print(flops, params)
 
     # 声明损失函数
     if args.loss == 'ctcloss':
@@ -104,7 +127,7 @@ def main(args):
                 outputs = model(enc_inputs)
             elif args.model == 'seq2seq':
                  outputs = model(enc_inputs, dec_inputs)
-            elif args.model == 'seq2seq+CNN':
+            elif args.model == 'CNN':
                 outputs = model(enc_inputs, dec_inputs)
 
             # 根据不同的损失函数计算损失
@@ -152,7 +175,7 @@ def main(args):
                                 test_outputs = model(test_enc_inputs)
                             elif args.model == 'seq2seq':
                                 test_outputs = model(test_enc_inputs, test_dec_inputs)
-                            elif args.model == 'seq2seq+CNN':
+                            elif args.model == 'CNN':
                                 test_outputs = model(test_enc_inputs, test_dec_inputs)
                         else:
                             if args.model == 'SpeechTransformer':
@@ -167,7 +190,7 @@ def main(args):
                                 test_outputs = model(test_enc_inputs)
                             elif args.model == 'seq2seq':
                                 test_outputs = eval_seq2seq(model, test_enc_inputs, test_dec_inputs, tgt_vocab_size)
-                            elif args.model == 'seq2seq+CNN':
+                            elif args.model == 'CNN':
                                 test_outputs = eval_CNN(model, test_enc_inputs, test_dec_inputs, tgt_vocab_size)
 
                         
